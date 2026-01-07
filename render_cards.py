@@ -75,17 +75,53 @@ BODY_SIZE = 9
 COST_SIZE = 18
 META_SIZE = 7
 
-# Icons (unicode)
-ICONS = {
-    "attack": "⚔",
-    "defense": "🛡",
-    "spell": "✦",
-    "utility": "⚙",
-    # Many emoji (like 🎒), "utility": "🧰", are not present in common TTF fonts like DejaVuSans
-    # and therefore won't render in PDF. Use a monochrome symbol as fallback.
-    "item": "⚒",
-    "coin": "◈",
-}
+# Load icons (unicode) from config/types.xml. Fallback to a small built-in set for schools.
+def load_type_icons(path: str = os.path.join("config", "types.xml")) -> Dict[str, str]:
+    icons: Dict[str, str] = {}
+    try:
+        tree = ET.parse(path)
+        root = tree.getroot()
+        for t in root.findall("type"):
+            name = t.attrib.get("name")
+            icon = t.attrib.get("icon")
+            if name and icon:
+                icons[name] = icon
+    except Exception:
+        # If config missing or invalid, continue with empty mapping and rely on defaults below
+        pass
+    return icons
+
+# Global mapping loaded once
+TYPE_ICONS = load_type_icons()
+
+
+def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Load front icon mappings: deck -> front char, and lootType -> front char."""
+    deck_map: Dict[str, str] = {}
+    loot_map: Dict[str, str] = {}
+    try:
+        tree = ET.parse(path)
+        root = tree.getroot()
+        for d in root.findall("deck"):
+            name = d.attrib.get("name")
+            front = d.attrib.get("front")
+            if name and front:
+                deck_map[name] = front
+        ld = root.find("lootDefaults")
+        if ld is not None:
+            for lt in ld.findall("lootType"):
+                name = lt.attrib.get("name")
+                front = lt.attrib.get("front")
+                if name and front:
+                    loot_map[name] = front
+    except Exception:
+        pass
+
+    return deck_map, loot_map
+
+
+# Global front icon mappings
+FRONT_DECK_ICONS, LOOT_FRONT_DEFAULTS = load_front_icons()
 
 # Optional image icon size (will use icons/<type>.png if present)
 ICON_SIZE = 10 * mm
@@ -102,6 +138,7 @@ class Card:
     school: Optional[str] = None   # attack | defense | spell | utility
     slot: Optional[str] = None
     klass: Optional[str] = None
+    front_icon: Optional[str] = None
     count: int = 1
     tags: List[str] = None
 
@@ -149,28 +186,79 @@ def validate_xml(xml_path: str, xsd_path: str) -> None:
 
 
 def parse_cards(xml_path: str) -> List[Card]:
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
+    # Prefer lxml for parsing so we can support XInclude; fall back to ElementTree.
+    try:
+        from lxml import etree as LET  # type: ignore
+    except Exception:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+    else:
+        # Parse with lxml so xi:include can be expanded via .xinclude()
+        ltree = LET.parse(xml_path)
+        try:
+            ltree.xinclude()
+        except Exception:
+            # If xinclude fails for any reason, continue with the collapsed tree anyway
+            pass
+        xml_bytes = LET.tostring(ltree)
+        root = ET.fromstring(xml_bytes)
+
     cards: List[Card] = []
 
     for node in root.findall("card"):
         cid = node.attrib.get("id", "").strip()
-        ctype = node.attrib.get("type", "ability").strip()
-        cost_str = node.attrib.get("cost", "0").strip()
-        school = node.attrib.get("school", None)
-        slot = node.attrib.get("slot", None)
-        klass = node.attrib.get("class", None)
+        # Tags remain as card attributes
         tags_raw = node.attrib.get("tags", "")
         tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
 
         name = (node.findtext("name") or "").strip()
         subtitle = (node.findtext("subtitle") or "").strip()
-        effect = (node.findtext("effect") or "").strip()
+        effect = (node.findtext("text") or "").strip()
 
-        try:
-            cost = int(cost_str)
-        except ValueError:
-            cost = 0
+        # Default values
+        ctype = "ability"
+        cost = 0
+        school = None
+        slot = None
+        klass = None
+        front_icon = None
+
+        # Read nested <loot> block if present (new format)
+        loot = node.find("loot")
+        if loot is not None:
+            ctype = loot.attrib.get("lootType", ctype)
+            cost_str = loot.attrib.get("cost", None)
+            if cost_str is not None:
+                try:
+                    cost = int(cost_str)
+                except ValueError:
+                    cost = 0
+            school = loot.attrib.get("school", None)
+            slot = loot.attrib.get("slot", None)
+            klass = loot.attrib.get("class", None)
+            front_icon = loot.attrib.get("front_icon", None)
+            # if not explicitly provided, use loot defaults from config/front_icons.xml
+            if not front_icon:
+                front_icon = LOOT_FRONT_DEFAULTS.get(ctype)
+        else:
+            # Backwards compat: read attributes from card element
+            ctype = node.attrib.get("type", ctype).strip()
+            cost_str = node.attrib.get("cost", "0").strip()
+            try:
+                cost = int(cost_str)
+            except ValueError:
+                cost = 0
+            school = node.attrib.get("school", None)
+            slot = node.attrib.get("slot", None)
+            klass = node.attrib.get("class", None)
+            front_icon = node.attrib.get("front_icon", None)
+            # for non-loot variants, try deck-level default icons (monster/biome/etc.)
+            if not front_icon:
+                # determine variant type from child elements
+                for v in ("monster", "biome", "npc", "quest", "curse", "health"):
+                    if node.find(v) is not None:
+                        front_icon = FRONT_DECK_ICONS.get(v)
+                        break
 
         count_str = node.attrib.get("count", "1").strip()
         try:
@@ -195,6 +283,7 @@ def parse_cards(xml_path: str) -> List[Card]:
                 school=school,
                 slot=slot,
                 klass=klass,
+                front_icon=front_icon,
                 count=count,
                 tags=tags,
             ))
@@ -231,10 +320,10 @@ def wrap_text(c: canvas.Canvas, text: str, max_width: float, font_name: str, fon
 
 
 def icon_for(card: Card) -> str:
-    if card.type in ICONS:
-        return ICONS[card.type]
-    if card.school and card.school in ICONS:
-        return ICONS[card.school]
+    if card.type in TYPE_ICONS:
+        return TYPE_ICONS[card.type]
+    if card.school and card.school in TYPE_ICONS:
+        return TYPE_ICONS[card.school]
     return "•"
 
 
@@ -295,22 +384,60 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
     # Cost (top-right)
     c.setFont(FONT_BOLD, COST_SIZE)
     # Prepend coin symbol and nudge the price downward so it doesn't touch the card's top edge
-    coin_sym = ICONS.get("coin", "◈")
+    coin_sym = TYPE_ICONS.get("coin", "◈")
     cost_text = f"{coin_sym} {card.cost}"
     cost_y = header_y_top - (COST_SIZE / 2) - 2
     c.drawRightString(x + w - PADDING, cost_y, cost_text)
 
     # Icon (top-left) – prefer image file icons/<type>.png, fallback to unicode char
-    icon_img_path = os.path.join("icons", f"{card.type}.png")
-    if os.path.exists(icon_img_path):
+    # If a front_icon is provided, draw it centered as a large mark and reserve lower half for text
+    cx = x + w / 2
+    if card.front_icon:
+        # prefer image icons/<front_icon>.png, fallback to unicode mapping
+        icon_img_path = os.path.join("icons", f"{card.front_icon}.png")
+        # Prefer any configured mapping; if front_icon is an explicit symbol, use it
+        icon_text = TYPE_ICONS.get(card.front_icon) or card.front_icon or ic
+        # large icon size (proportional)
+        large_size = min(w * 0.5, h * 0.35)
+        # compute vertical position in upper half
+        content_top = header_y_bottom - 4
+        content_bottom = y + PADDING + FOOTER_H
+        icon_center_y = content_bottom + (content_top - content_bottom) * 0.66
         try:
-            c.drawImage(icon_img_path, ix, header_y_top - ICON_SIZE, width=ICON_SIZE, height=ICON_SIZE, mask='auto')
+            if os.path.exists(icon_img_path):
+                c.drawImage(icon_img_path, cx - large_size / 2, icon_center_y - large_size / 2,
+                            width=large_size, height=large_size, mask='auto')
+            else:
+                c.setFont(FONT_REG, int(min(48, large_size / mm * 4)))
+                c.drawCentredString(cx, icon_center_y - (FONT_REG and 0), icon_text)
         except Exception:
+            c.setFont(FONT_REG, 28)
+            c.drawCentredString(cx, icon_center_y + 6, icon_text)
+        # draw a small meta/icon in top-left as well
+        small_icon_path = os.path.join("icons", f"{card.type}.png")
+        if os.path.exists(small_icon_path):
+            try:
+                c.drawImage(small_icon_path, ix, header_y_top - ICON_SIZE, width=ICON_SIZE, height=ICON_SIZE, mask='auto')
+            except Exception:
+                c.setFont(FONT_REG, 12)
+                c.drawString(ix, header_y_top - 12, ic)
+        else:
             c.setFont(FONT_REG, 12)
             c.drawString(ix, header_y_top - 12, ic)
+        # adjust body_top to be below the large icon
+        body_top = icon_center_y - (large_size / 2) - 4
     else:
-        c.setFont(FONT_REG, 12)
-        c.drawString(ix, header_y_top - 12, ic)
+        # Icon (top-left) – prefer image file icons/<type>.png, fallback to unicode char
+        icon_img_path = os.path.join("icons", f"{card.type}.png")
+        if os.path.exists(icon_img_path):
+            try:
+                c.drawImage(icon_img_path, ix, header_y_top - ICON_SIZE, width=ICON_SIZE, height=ICON_SIZE, mask='auto')
+            except Exception:
+                c.setFont(FONT_REG, 12)
+                c.drawString(ix, header_y_top - 12, ic)
+        else:
+            c.setFont(FONT_REG, 12)
+            c.drawString(ix, header_y_top - 12, ic)
 
     # Title
     c.setFont(FONT_BOLD, TITLE_SIZE)
@@ -327,7 +454,8 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
     c.drawString(ix, header_y_bottom + 2, meta[:80])
 
     # Body / effect text
-    body_top = header_y_bottom - 4
+    if not card.front_icon:
+        body_top = header_y_bottom - 4
     body_bottom = y + PADDING + FOOTER_H
     body_h = body_top - body_bottom
     max_lines = max(1, int(body_h / (BODY_SIZE + 2)))
@@ -362,7 +490,7 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
     cy = y + h / 2
 
     # Icon (prefer image file icons/<type>.png if available)
-    icon_text = ICONS.get("coin", "◈")
+    icon_text = TYPE_ICONS.get("coin", "◈")
     icon_img_path = None
     if card is not None:
         icon_text = icon_for(card)
