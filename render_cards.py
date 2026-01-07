@@ -26,6 +26,8 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Paragraph
+from reportlab.lib.styles import ParagraphStyle
 
 # Optional XSD for XML validation
 INPUT_XSD = "cards.xsd"
@@ -59,7 +61,8 @@ GAP_Y = 4 * mm
 # Visual constants
 BORDER_RADIUS = 3 * mm  # "fake" radius (drawn as normal rect for simplicity)
 PADDING = 3.5 * mm
-HEADER_H = 12 * mm
+# Header height — increase to allow room for title + subtitle + icon/meta
+HEADER_H = 16 * mm
 FOOTER_H = 8 * mm
 
 # Typography
@@ -74,6 +77,8 @@ SUBTITLE_SIZE = 8
 BODY_SIZE = 9
 COST_SIZE = 18
 META_SIZE = 7
+# Vertical gap between title and subtitle (points)
+TITLE_SUBTITLE_GAP = 6
 
 # Icons (unicode)
 ICONS = {
@@ -219,10 +224,24 @@ def wrap_text(c: canvas.Canvas, text: str, max_width: float, font_name: str, fon
         else:
             if cur:
                 lines.append(" ".join(cur))
+                cur = []
+
+            # If a single word is too long for the line, split it into smaller chunks
+            if c.stringWidth(w, font_name, font_size) <= max_width:
+                # word fits on an empty line
                 cur = [w]
             else:
-                # If one word is too long, hard-split (rare for CZ)
-                lines.append(w)
+                chunk = ""
+                for ch in w:
+                    if c.stringWidth(chunk + ch, font_name, font_size) <= max_width:
+                        chunk += ch
+                    else:
+                        if chunk:
+                            lines.append(chunk)
+                        chunk = ch
+                # append the last chunk as the current line start
+                if chunk:
+                    cur = [chunk]
 
     if cur:
         lines.append(" ".join(cur))
@@ -295,10 +314,11 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
     # Cost (top-right)
     c.setFont(FONT_BOLD, COST_SIZE)
     # Prepend coin symbol and nudge the price downward so it doesn't touch the card's top edge
-    coin_sym = ICONS.get("coin", "◈")
-    cost_text = f"{coin_sym} {card.cost}"
-    cost_y = header_y_top - (COST_SIZE / 2) - 2
-    c.drawRightString(x + w - PADDING, cost_y, cost_text)
+    if getattr(card, 'cost', 0) and int(getattr(card, 'cost', 0)) != 0:
+        coin_sym = ICONS.get("coin", "◈")
+        cost_text = f"{coin_sym} {card.cost}"
+        cost_y = header_y_top - (COST_SIZE / 2) - 2
+        c.drawRightString(x + w - PADDING, cost_y, cost_text)
 
     # Icon (top-left) – prefer image file icons/<type>.png, fallback to unicode char
     icon_img_path = os.path.join("icons", f"{card.type}.png")
@@ -316,11 +336,64 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
     c.setFont(FONT_BOLD, TITLE_SIZE)
     title_x = ix + 14
     title_y = header_y_top - 12
-    c.drawString(title_x, title_y, card.name[:40])
+    # Allow title to wrap to multiple lines if necessary
+    title_max_w = iw - 14
+    # Use Paragraph for title to get more robust wrapping and metrics
+    title_style = ParagraphStyle(
+        name="card_title",
+        fontName=FONT_BOLD,
+        fontSize=TITLE_SIZE,
+        leading=TITLE_SIZE + 2,
+    )
 
-    # Subtitle
+    # Maximum height allowed for title (two lines)
+    max_title_h = (TITLE_SIZE + 2) * 2
+    para = Paragraph(card.name or "", title_style)
+    para_w, para_h = para.wrap(title_max_w, max_title_h)
+
+    # If paragraph is too tall, truncate words until it fits and append ellipsis
+    if para_h > max_title_h:
+        words = (card.name or "").replace("\n", " ").split()
+        while words:
+            words = words[:-1]
+            candidate = (" ".join(words) + "…") if words else ""
+            para = Paragraph(candidate, title_style)
+            para_w, para_h = para.wrap(title_max_w, max_title_h)
+            if para_h <= max_title_h:
+                break
+        else:
+            para = Paragraph("", title_style)
+            para_w, para_h = para.wrap(title_max_w, max_title_h)
+
+    # Draw paragraph: ReportLab's drawOn expects bottom-left y; compute y so
+    # the paragraph top aligns roughly with previous title_y baseline.
+    ty = title_y
+    y_pos = ty - para_h + (TITLE_SIZE / 2)
+    para.drawOn(c, title_x, y_pos)
+
+    # Subtitle (wrap if needed)
+    # Start subtitle below the rendered title paragraph (use actual para bottom)
+    subt_y = y_pos - TITLE_SUBTITLE_GAP
     c.setFont(FONT_REG, SUBTITLE_SIZE)
-    c.drawString(title_x, title_y - 10, card.subtitle[:55])
+    subtitle_lines = wrap_text(c, card.subtitle, iw - (title_x - ix), FONT_REG, SUBTITLE_SIZE)
+
+    # Prevent subtitle from overlapping the meta row at the bottom of header.
+    # Compute available vertical space between subtitle start and header bottom.
+    available_sub_space = subt_y - (header_y_bottom + 4)
+    line_h_sub = SUBTITLE_SIZE + 2
+    if available_sub_space >= line_h_sub:
+        max_sub_lines = int(available_sub_space // line_h_sub)
+    else:
+        max_sub_lines = 0
+
+    # cap to at most 2 lines for subtitle
+    max_sub_lines = min(max_sub_lines, 2)
+    subtitle_lines = subtitle_lines[:max_sub_lines]
+
+    sy = subt_y
+    for sl in subtitle_lines:
+        c.drawString(title_x, sy, sl)
+        sy -= line_h_sub
 
     # Meta
     c.setFont(FONT_REG, META_SIZE)
@@ -332,12 +405,40 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
     body_h = body_top - body_bottom
     max_lines = max(1, int(body_h / (BODY_SIZE + 2)))
 
-    c.setFont(FONT_REG, BODY_SIZE)
-    lines = wrap_text(c, card.effect, iw, FONT_REG, BODY_SIZE)[:max_lines]
-    line_y = body_top - (BODY_SIZE + 2)
-    for ln in lines:
-        c.drawString(ix, line_y, ln)
-        line_y -= (BODY_SIZE + 2)
+    # Use ReportLab Paragraph for robust wrapping; if the paragraph is too
+    # tall for the body area, iteratively truncate words and retry.
+    style = ParagraphStyle(
+        name="card_body",
+        fontName=FONT_REG,
+        fontSize=BODY_SIZE,
+        leading=BODY_SIZE + 2,
+    )
+
+    text = card.effect or ""
+    para = Paragraph(text, style)
+    para_w, para_h = para.wrap(iw, body_h)
+
+    # If it doesn't fit, truncate words until it fits (append ellipsis).
+    if para_h > body_h:
+        words = text.replace("\n", " ").split()
+        while words:
+            words = words[:-1]
+            candidate = (" ".join(words) + "…") if words else ""
+            para = Paragraph(candidate, style)
+            para_w, para_h = para.wrap(iw, body_h)
+            if para_h <= body_h:
+                text = candidate
+                break
+        else:
+            # nothing fits; use empty text
+            text = ""
+            para = Paragraph(text, style)
+            para_w, para_h = para.wrap(iw, body_h)
+
+    # Draw paragraph at bottom-aligned inside body area
+    if para_h > 0:
+        y_pos = body_bottom + (body_h - para_h)
+        para.drawOn(c, ix, y_pos)
 
     # Footer: ID + tags (tiny)
     footer_y = y + PADDING + 2
@@ -392,8 +493,9 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
     # Large cost in center
     back_cost_size = int(COST_SIZE * 1.8)
     c.setFont(FONT_BOLD, back_cost_size)
-    cost_str = str(card.cost) if card is not None else ""
-    c.drawCentredString(cx, cy - (back_cost_size / 2) + 4, cost_str)
+    if card is not None and getattr(card, 'cost', 0) and int(getattr(card, 'cost', 0)) != 0:
+        cost_str = str(card.cost)
+        c.drawCentredString(cx, cy - (back_cost_size / 2) + 4, cost_str)
 
     # Small label at bottom
     c.setFont(FONT_BOLD, META_SIZE)
