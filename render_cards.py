@@ -104,6 +104,7 @@ class Card:
     klass: Optional[str] = None
     count: int = 1
     tags: List[str] = None
+    icon: Optional[str] = None
 
 
 def ensure_fonts() -> None:
@@ -113,15 +114,6 @@ def ensure_fonts() -> None:
     else:
         raise FileNotFoundError(f"Font not found: {FONT_PATH_REG}")
 
-        parser = argparse.ArgumentParser(description="Render Gnarl cards from XML to PDF")
-        parser.add_argument("-i", "--input", default=INPUT_XML,
-                            help="Input XML file or directory containing *.xml files")
-        parser.add_argument("-x", "--xsd", default=None,
-                            help="Optional XSD file to validate XML against (if omitted, looks for cards.xsd)")
-        parser.add_argument("--color", dest="color", action="store_true", default=False,
-                            help="Render in color (default: black & white)")
-        parser.add_argument("-o", "--outdir", default=os.path.dirname(OUTPUT_PDF) or "out",
-                            help="Output directory for generated PDFs")
     if os.path.exists(FONT_PATH_BOLD):
         pdfmetrics.registerFont(TTFont(FONT_BOLD, FONT_PATH_BOLD))
     else:
@@ -152,6 +144,16 @@ def parse_cards(xml_path: str) -> List[Card]:
     tree = ET.parse(xml_path)
     root = tree.getroot()
     cards: List[Card] = []
+
+    # Parse optional types/default icons section
+    type_icons: Dict[str, str] = {}
+    types_node = root.find("types")
+    if types_node is not None:
+        for tnode in types_node.findall("type"):
+            tname = tnode.attrib.get("name")
+            ticon = tnode.attrib.get("icon")
+            if tname and ticon:
+                type_icons[tname] = ticon
 
     for node in root.findall("card"):
         cid = node.attrib.get("id", "").strip()
@@ -184,9 +186,12 @@ def parse_cards(xml_path: str) -> List[Card]:
             cid = f"{ctype}_{len(cards)+1}"
 
         # Append `count` copies of the card into the result list.
-        for _ in range(count):
+        for i in range(count):
+            instance_id = cid if count == 1 else f"{cid}#{i+1}"
+            # card-level icon overrides type default icon
+            card_icon = node.attrib.get("icon") or type_icons.get(ctype)
             cards.append(Card(
-                id=cid,
+                id=instance_id,
                 type=ctype,
                 cost=cost,
                 name=name,
@@ -195,8 +200,9 @@ def parse_cards(xml_path: str) -> List[Card]:
                 school=school,
                 slot=slot,
                 klass=klass,
-                count=count,
+                count=1,
                 tags=tags,
+                icon=card_icon,
             ))
 
     return cards
@@ -231,6 +237,9 @@ def wrap_text(c: canvas.Canvas, text: str, max_width: float, font_name: str, fon
 
 
 def icon_for(card: Card) -> str:
+    # Card-level icon override (emoji/string)
+    if getattr(card, "icon", None):
+        return card.icon
     if card.type in ICONS:
         return ICONS[card.type]
     if card.school and card.school in ICONS:
@@ -292,13 +301,14 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
         meta_parts.append(card.klass)
     meta = " • ".join(meta_parts)
 
-    # Cost (top-right)
-    c.setFont(FONT_BOLD, COST_SIZE)
-    # Prepend coin symbol and nudge the price downward so it doesn't touch the card's top edge
-    coin_sym = ICONS.get("coin", "◈")
-    cost_text = f"{coin_sym} {card.cost}"
-    cost_y = header_y_top - (COST_SIZE / 2) - 2
-    c.drawRightString(x + w - PADDING, cost_y, cost_text)
+    # Cost (top-right) — only draw if cost > 0
+    if getattr(card, "cost", 0) and card.cost > 0:
+        c.setFont(FONT_BOLD, COST_SIZE)
+        # Prepend coin symbol and nudge the price downward so it doesn't touch the card's top edge
+        coin_sym = ICONS.get("coin", "◈")
+        cost_text = f"{coin_sym} {card.cost}"
+        cost_y = header_y_top - (COST_SIZE / 2) - 2
+        c.drawRightString(x + w - PADDING, cost_y, cost_text)
 
     # Icon (top-left) – prefer image file icons/<type>.png, fallback to unicode char
     icon_img_path = os.path.join("icons", f"{card.type}.png")
@@ -312,15 +322,27 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
         c.setFont(FONT_REG, 12)
         c.drawString(ix, header_y_top - 12, ic)
 
-    # Title
-    c.setFont(FONT_BOLD, TITLE_SIZE)
+    # Title (wrap like body)
     title_x = ix + 14
     title_y = header_y_top - 12
-    c.drawString(title_x, title_y, card.name[:40])
+    title_max_w = iw - (title_x - ix) - PADDING
+    title_lines = wrap_text(c, card.name, title_max_w, FONT_BOLD, TITLE_SIZE)
+    c.setFont(FONT_BOLD, TITLE_SIZE)
+    ty = title_y
+    for ln in title_lines[:2]:
+        c.drawString(title_x, ty, ln)
+        ty -= (TITLE_SIZE + 2)
 
-    # Subtitle
+    # Subtitle (wrap under title)
+    subtitle_max_w = title_max_w
+    subtitle_lines = wrap_text(c, card.subtitle, subtitle_max_w, FONT_REG, SUBTITLE_SIZE)
     c.setFont(FONT_REG, SUBTITLE_SIZE)
-    c.drawString(title_x, title_y - 10, card.subtitle[:55])
+    # start subtitle a bit below last title line
+    sub_start_y = ty - 2
+    sy = sub_start_y
+    for ln in subtitle_lines[:2]:
+        c.drawString(title_x, sy, ln)
+        sy -= (SUBTITLE_SIZE + 1)
 
     # Meta
     c.setFont(FONT_REG, META_SIZE)
@@ -353,15 +375,19 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
     """Draw the back side of a card into the same rectangle.
     If `card` is None, draw a generic back pattern with "Gnarl".
     """
+    # Optional colored back background FIRST (so it doesn't cover content)
+    if color:
+        c.setFillColor(colors.lightblue)
+        c.rect(x + 1, y + 1, w - 2, h - 2, stroke=0, fill=1)
+        c.setFillColor(colors.black)
+
     # Card border
     c.setLineWidth(1)
     c.rect(x, y, w, h, stroke=1, fill=0)
 
-    # Center positions
     cx = x + w / 2
     cy = y + h / 2
 
-    # Icon (prefer image file icons/<type>.png if available)
     icon_text = ICONS.get("coin", "◈")
     icon_img_path = None
     if card is not None:
@@ -370,9 +396,9 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
         if os.path.exists(potential):
             icon_img_path = potential
 
+    # Icon
     if icon_img_path:
         try:
-            # draw image centered above the cost
             img_w = ICON_SIZE
             img_h = ICON_SIZE
             c.drawImage(icon_img_path, cx - img_w / 2, cy + 10 * mm, width=img_w, height=img_h, mask='auto')
@@ -383,22 +409,16 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
         c.setFont(FONT_REG, 28)
         c.drawCentredString(cx, cy + 10 * mm + 6, icon_text)
 
-    # Optional colored back background
-    if color:
-        c.setFillColor(colors.lightblue)
-        c.rect(x + 1, y + 1, w - 2, h - 2, stroke=0, fill=1)
-        c.setFillColor(colors.black)
+    # Large cost in center (only if > 0)
+    if card is not None and getattr(card, "cost", 0) and card.cost > 0:
+        back_cost_size = int(COST_SIZE * 1.8)
+        c.setFont(FONT_BOLD, back_cost_size)
+        cost_str = str(card.cost)
+        c.drawCentredString(cx, cy - (back_cost_size / 2) + 4, cost_str)
 
-    # Large cost in center
-    back_cost_size = int(COST_SIZE * 1.8)
-    c.setFont(FONT_BOLD, back_cost_size)
-    cost_str = str(card.cost) if card is not None else ""
-    c.drawCentredString(cx, cy - (back_cost_size / 2) + 4, cost_str)
-
-    # Small label at bottom
+    # Label
     c.setFont(FONT_BOLD, META_SIZE)
-    label = "Gnarl"
-    c.drawCentredString(cx, y + PADDING + 2, label)
+    c.drawCentredString(cx, y + PADDING + 2, "Gnarl")
 
     # (no per-card numbering — page numbering handled globally)
 
@@ -465,17 +485,19 @@ def render_pdf(cards: List[Card], out_path: str, color: bool = False) -> None:
 
         c.showPage()
 
-        # Draw backs in same layout (so that double-sided printing lines up)
+        # Draw backs (mirror columns for duplex alignment)
         for pos in range(cards_per_page):
             card_idx = start_idx + pos
             col = pos % GRID_COLS
             r = pos // GRID_COLS
-            x = start_x + col * (CARD_W + GAP_X)
+
+            col_back = (GRID_COLS - 1) - col  # mirror columns for duplex
+            x = start_x + col_back * (CARD_W + GAP_X)
             y = start_y + (GRID_ROWS - 1 - r) * (CARD_H + GAP_Y)
+
             if card_idx < len(cards):
                 draw_back(c, cards[card_idx], x, y, CARD_W, CARD_H, color=use_color)
             else:
-                # empty slot -> generic back
                 draw_back(c, None, x, y, CARD_W, CARD_H, color=use_color)
 
         # Page-level footer: number this page as "N. back"

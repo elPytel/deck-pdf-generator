@@ -23,3 +23,6 @@ Dočasné přidání do path:
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
+
+Karty mají výchozí velký obrázek.
+Ten je definovaný skupinou karet. Případně to může být emoji přímo specifikované na kartě.
