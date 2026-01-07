@@ -95,9 +95,10 @@ def load_type_icons(path: str = os.path.join("config", "types.xml")) -> Dict[str
 TYPE_ICONS = load_type_icons()
 
 
-def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> Tuple[Dict[str, str], Dict[str, str]]:
-    """Load front icon mappings: deck -> front char, and lootType -> front char."""
-    deck_map: Dict[str, str] = {}
+def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+    """Load icon mappings: deck -> front char, deck -> back char, and lootType -> front char."""
+    deck_front_map: Dict[str, str] = {}
+    deck_back_map: Dict[str, str] = {}
     loot_map: Dict[str, str] = {}
     try:
         tree = ET.parse(path)
@@ -105,8 +106,11 @@ def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> T
         for d in root.findall("deck"):
             name = d.attrib.get("name")
             front = d.attrib.get("front")
+            back = d.attrib.get("back")
             if name and front:
-                deck_map[name] = front
+                deck_front_map[name] = front
+            if name and back:
+                deck_back_map[name] = back
         ld = root.find("lootDefaults")
         if ld is not None:
             for lt in ld.findall("lootType"):
@@ -117,11 +121,11 @@ def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> T
     except Exception:
         pass
 
-    return deck_map, loot_map
+    return deck_front_map, deck_back_map, loot_map
 
 
 # Global front icon mappings
-FRONT_DECK_ICONS, LOOT_FRONT_DEFAULTS = load_front_icons()
+FRONT_DECK_ICONS, BACK_DECK_ICONS, LOOT_FRONT_DEFAULTS = load_front_icons()
 
 # Optional image icon size (will use icons/<type>.png if present)
 ICON_SIZE = 10 * mm
@@ -490,10 +494,15 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
     cy = y + h / 2
 
     # Icon (prefer image file icons/<type>.png if available)
-    icon_text = TYPE_ICONS.get("coin", "◈")
+    # Default back icon: prefer deck-level 'loot' back icon, fallback to coin/type icon
+    icon_text = BACK_DECK_ICONS.get("loot", TYPE_ICONS.get("coin", "◈"))
     icon_img_path = None
     if card is not None:
-        icon_text = icon_for(card)
+        # For loot-type cards, always use the deck's loot back icon rather than school/type
+        if card.type in LOOT_FRONT_DEFAULTS:
+            icon_text = BACK_DECK_ICONS.get("loot", icon_text)
+        else:
+            icon_text = icon_for(card)
         potential = os.path.join("icons", f"{card.type}.png")
         if os.path.exists(potential):
             icon_img_path = potential
