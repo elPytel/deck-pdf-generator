@@ -109,3 +109,5 @@ Uděláš druhé schema (layout.xsd). V něm:
 * <field @area> je enumerace: header_left/header_right/header_title/header_subtitle/meta_line/body/body_top/footer_left/footer_right…
 
 Tím dostaneš formální popis “co kde má být”.
+Karty mají výchozí velký obrázek.
+Ten je definovaný skupinou karet. Případně to může být emoji přímo specifikované na kartě.

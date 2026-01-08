@@ -1,2 +1,2 @@
 reportlab
-etree
+lxml
