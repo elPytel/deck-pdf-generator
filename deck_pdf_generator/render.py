@@ -59,9 +59,13 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
     c.rect(x, y, w, h, stroke=1, fill=0)
 
     if color:
-        c.setFillColor(colors.whitesmoke)
+        deck_name = card.deck or "loot"
+        header_color = config.DECK_COLORS.get(deck_name, colors.whitesmoke)
+        # always use black text for colored cards
+        text_color = colors.black
+        c.setFillColor(header_color)
         c.rect(x + 0.5, y + h - config.HEADER_H - 0.5, w - 1, config.HEADER_H, stroke=0, fill=1)
-        c.setFillColor(colors.black)
+        c.setFillColor(text_color)
 
     c.setLineWidth(0.4)
     draw_cut_marks(c, x, y, w, h)
@@ -185,6 +189,7 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
 
     icon_text = config.BACK_DECK_ICONS.get("loot", config.TYPE_ICONS.get("coin", "◈"))
     icon_img_path = None
+    deck_name = (card.deck if card is not None else None) or "loot"
     if card is not None:
         if card.deck and card.deck in config.BACK_DECK_ICONS:
             icon_text = config.BACK_DECK_ICONS.get(card.deck, icon_text)
@@ -196,6 +201,14 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
         potential = os.path.join("icons", f"{card.type}.png")
         if os.path.exists(potential):
             icon_img_path = potential
+    # color fill should be drawn before the icon so it doesn't cover it
+    if color:
+        back_color = config.DECK_COLORS.get(deck_name, colors.lightblue)
+        # always use black text for colored cards
+        text_color = colors.black
+        c.setFillColor(back_color)
+        c.rect(x + 1, y + 1, w - 2, h - 2, stroke=0, fill=1)
+        c.setFillColor(text_color)
 
     if icon_img_path:
         try:
@@ -214,11 +227,6 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
         font_size = int(config.ICON_SIZE * 4)
         c.setFont(icon_font_name, font_size)
         c.drawCentredString(cx, cy - 15 * mm + int((config.ICON_SIZE * 4) / 4), icon_text)
-
-    if color:
-        c.setFillColor(colors.lightblue)
-        c.rect(x + 1, y + 1, w - 2, h - 2, stroke=0, fill=1)
-        c.setFillColor(colors.black)
 
     # draw back cost only when card present and cost > 0
     if card is not None and getattr(card, 'cost', 0):

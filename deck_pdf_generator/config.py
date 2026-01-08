@@ -1,5 +1,6 @@
 import os
 import xml.etree.ElementTree as ET
+from reportlab.lib import colors as rl_colors
 from typing import Dict, Tuple
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -53,10 +54,11 @@ def load_type_icons(path: str = os.path.join("config", "types.xml")) -> Dict[str
     return icons
 
 
-def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, object]]:
     deck_front_map = {}
     deck_back_map = {}
     loot_map = {}
+    deck_colors: Dict[str, object] = {}
     try:
         tree = ET.parse(path)
         root = tree.getroot()
@@ -64,10 +66,17 @@ def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> T
             name = d.attrib.get("name")
             front = d.attrib.get("front")
             back = d.attrib.get("back")
+            color = d.attrib.get("color")
             if name and front:
                 deck_front_map[name] = front
             if name and back:
                 deck_back_map[name] = back
+            if name and color:
+                try:
+                    deck_colors[name] = rl_colors.HexColor(color)
+                except Exception:
+                    # ignore invalid color values
+                    pass
         ld = root.find("lootDefaults")
         if ld is not None:
             for lt in ld.findall("lootType"):
@@ -77,8 +86,8 @@ def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> T
                     loot_map[name] = front
     except Exception:
         pass
-    return deck_front_map, deck_back_map, loot_map
+    return deck_front_map, deck_back_map, loot_map, deck_colors
 
 # Load globals
 TYPE_ICONS = load_type_icons()
-FRONT_DECK_ICONS, BACK_DECK_ICONS, LOOT_FRONT_DEFAULTS = load_front_icons()
+FRONT_DECK_ICONS, BACK_DECK_ICONS, LOOT_FRONT_DEFAULTS, DECK_COLORS = load_front_icons()
