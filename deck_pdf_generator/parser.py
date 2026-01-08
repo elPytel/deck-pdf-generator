@@ -52,7 +52,18 @@ def parse_cards(xml_path: str) -> List[Card]:
             klass = loot.attrib.get("class", None)
             front_icon = loot.attrib.get("front_icon", None)
             if not front_icon:
-                front_icon = config.LOOT_FRONT_DEFAULTS.get(ctype)
+                # prefer an icon based on school for abilities, then fallback to loot-type defaults
+                school_icon_map = {
+                    "attack": "⚔️",
+                    "defense": "🛡️",
+                    "spell": "✨",
+                    "utility": "⚙️",
+                }
+                front_icon = None
+                if school and school in school_icon_map:
+                    front_icon = school_icon_map[school]
+                if not front_icon:
+                    front_icon = config.LOOT_FRONT_DEFAULTS.get(ctype)
             deck = "loot"
         else:
             ctype = node.attrib.get("type", ctype).strip()
@@ -65,11 +76,18 @@ def parse_cards(xml_path: str) -> List[Card]:
             slot = node.attrib.get("slot", None)
             klass = node.attrib.get("class", None)
             front_icon = node.attrib.get("front_icon", None)
+            # if card-level front_icon missing, try to read it from the variant child (e.g. <biome front_icon="…"/>)
             if not front_icon:
                 for v in ("monster", "biome", "npc", "quest", "curse", "health"):
-                    if node.find(v) is not None:
-                        front_icon = config.FRONT_DECK_ICONS.get(v)
+                    el = node.find(v)
+                    if el is not None:
+                        # prefer explicit attribute on the child element
+                        front_icon = el.attrib.get("front_icon") or config.FRONT_DECK_ICONS.get(v)
                         deck = v
+                        # if no explicit `type` attribute was provided on the card,
+                        # use the variant name as the card type (e.g. npc, monster, biome)
+                        if 'type' not in node.attrib:
+                            ctype = v
                         break
 
         count_str = node.attrib.get("count", "1").strip()

@@ -86,11 +86,13 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
         meta_parts.append(card.klass)
     meta = " • ".join(meta_parts)
 
-    c.setFont(fonts.FONT_BOLD, config.COST_SIZE)
-    coin_sym = config.TYPE_ICONS.get("coin", "◈")
-    cost_text = f"{coin_sym} {card.cost}"
-    cost_y = header_y_top - (config.COST_SIZE / 2) - 2
-    c.drawRightString(x + w - config.PADDING, cost_y, cost_text)
+    # draw cost only when non-zero
+    if getattr(card, 'cost', 0):
+        c.setFont(fonts.FONT_BOLD, config.COST_SIZE)
+        coin_sym = config.TYPE_ICONS.get("coin", "◈")
+        cost_text = f"{coin_sym} {card.cost}"
+        cost_y = header_y_top - (config.COST_SIZE / 2) - 2
+        c.drawRightString(x + w - config.PADDING, cost_y, cost_text)
 
     cx = x + w / 2
     if card.front_icon:
@@ -197,27 +199,33 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
 
     if icon_img_path:
         try:
-            img_w = config.ICON_SIZE
-            img_h = config.ICON_SIZE
-            c.drawImage(icon_img_path, cx - img_w / 2, cy + 10 * mm, width=img_w, height=img_h, mask='auto')
+            img_w = config.ICON_SIZE * 4
+            img_h = config.ICON_SIZE * 4
+            c.drawImage(icon_img_path, cx - img_w / 2, cy - 15 * mm, width=img_w, height=img_h, mask='auto')
         except Exception:
             icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
-            c.setFont(icon_font_name, 28)
-            c.drawCentredString(cx, cy + 10 * mm + 6, icon_text)
+            # font size in points ~ image height
+            font_size = int(img_h)
+            c.setFont(icon_font_name, font_size)
+            c.drawCentredString(cx, cy - 15 * mm + int(img_h / 4), icon_text)
     else:
         icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
-        c.setFont(icon_font_name, 28)
-        c.drawCentredString(cx, cy + 10 * mm + 6, icon_text)
+        # draw larger emoji when no image is available
+        font_size = int(config.ICON_SIZE * 4)
+        c.setFont(icon_font_name, font_size)
+        c.drawCentredString(cx, cy - 15 * mm + int((config.ICON_SIZE * 4) / 4), icon_text)
 
     if color:
         c.setFillColor(colors.lightblue)
         c.rect(x + 1, y + 1, w - 2, h - 2, stroke=0, fill=1)
         c.setFillColor(colors.black)
 
-    back_cost_size = int(config.COST_SIZE * 1.8)
-    c.setFont(fonts.FONT_BOLD, back_cost_size)
-    cost_str = str(card.cost) if card is not None else ""
-    c.drawCentredString(cx, cy - (back_cost_size / 2) + 4, cost_str)
+    # draw back cost only when card present and cost > 0
+    if card is not None and getattr(card, 'cost', 0):
+        back_cost_size = int(config.COST_SIZE * 1.8)
+        c.setFont(fonts.FONT_BOLD, back_cost_size)
+        cost_str = str(card.cost)
+        c.drawCentredString(cx, cy - (back_cost_size / 2) - 14 * mm, cost_str)
 
     c.setFont(fonts.FONT_BOLD, config.META_SIZE)
     label = "Gnarl"

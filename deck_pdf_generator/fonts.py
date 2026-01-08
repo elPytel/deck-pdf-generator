@@ -88,6 +88,11 @@ def check_icon_glyphs(font_path: Optional[str] = None) -> None:
         return
 
     if font_path is None:
+        # Ensure fonts are registered so ICON_FONT_PATH is set when possible
+        try:
+            ensure_fonts()
+        except Exception:
+            pass
         # Prefer icon font when available
         font_path = ICON_FONT_PATH or FONT_PATH_REG
 
