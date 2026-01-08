@@ -26,6 +26,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.utils import ImageReader
+import logging
 
 # Optional XSD for XML validation
 INPUT_XSD = "cards.xsd"
@@ -68,6 +69,10 @@ FONT_BOLD = "DejaVuSans-Bold"
 
 FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+# Icon font (emoji) — registered separately so text stays in the regular font
+ICON_FONT = "Symbola"
+ICON_FONT_PATH: Optional[str] = None
 
 TITLE_SIZE = 12
 SUBTITLE_SIZE = 8
@@ -143,50 +148,142 @@ class Card:
     slot: Optional[str] = None
     klass: Optional[str] = None
     front_icon: Optional[str] = None
+    deck: Optional[str] = None
     count: int = 1
     tags: List[str] = None
 
 
 def ensure_fonts() -> None:
-    # Register fonts for Unicode support
-    if os.path.exists(FONT_PATH_REG):
-        pdfmetrics.registerFont(TTFont(FONT_REG, FONT_PATH_REG))
-    else:
-        raise FileNotFoundError(f"Font not found: {FONT_PATH_REG}")
+    global FONT_REG, FONT_BOLD, FONT_PATH_REG, FONT_PATH_BOLD
+    global ICON_FONT, ICON_FONT_PATH
 
-        parser = argparse.ArgumentParser(description="Render Gnarl cards from XML to PDF")
-        parser.add_argument("-i", "--input", default=INPUT_XML,
-                            help="Input XML file or directory containing *.xml files")
-        parser.add_argument("-x", "--xsd", default=None,
-                            help="Optional XSD file to validate XML against (if omitted, looks for cards.xsd)")
-        parser.add_argument("--color", dest="color", action="store_true", default=False,
-                            help="Render in color (default: black & white)")
-        parser.add_argument("-o", "--outdir", default=os.path.dirname(OUTPUT_PDF) or "out",
-                            help="Output directory for generated PDFs")
-    if os.path.exists(FONT_PATH_BOLD):
-        pdfmetrics.registerFont(TTFont(FONT_BOLD, FONT_PATH_BOLD))
-    else:
-        raise FileNotFoundError(f"Font not found: {FONT_PATH_BOLD}")
+    # Prefer Symbola for emoji if available (common locations)
+    symbola_candidates = [
+        "/usr/share/fonts/truetype/Symbola/Symbola.ttf",
+        "/usr/share/fonts/truetype/symbola/Symbola.ttf",
+        "/usr/share/fonts/truetype/ancient-scripts/Symbola_hint.ttf",
+        "/usr/local/share/fonts/Symbola.ttf",
+        os.path.expanduser("~/.local/share/fonts/Symbola.ttf"),
+    ]
+    for p in symbola_candidates:
+        if p and os.path.exists(p):
+            try:
+                # Register Symbola (or similar) as the icon font; keep text font as-is.
+                ICON_FONT = "Symbola"
+                ICON_FONT_PATH = p
+                pdfmetrics.registerFont(TTFont(ICON_FONT, ICON_FONT_PATH))
+                logging.info("Registered icon font %s for emoji: %s", ICON_FONT, p)
+                break
+            except Exception:
+                # continue to fallback behaviour
+                ICON_FONT_PATH = None
+                continue
+
+    # Register fonts for Unicode support. Try multiple candidates and fall back
+    # to built-in PDF fonts when TTFs are not available to avoid crashing.
+    candidates_reg = [
+        FONT_PATH_REG,
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    ]
+    candidates_bold = [
+        FONT_PATH_BOLD,
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+    ]
+
+    reg_registered = False
+    for p in candidates_reg:
+        if p and os.path.exists(p):
+            try:
+                FONT_PATH_REG = p
+                pdfmetrics.registerFont(TTFont(FONT_REG, p))
+                reg_registered = True
+                break
+            except Exception:
+                continue
+
+    bold_registered = False
+    for p in candidates_bold:
+        if p and os.path.exists(p):
+            try:
+                FONT_PATH_BOLD = p
+                pdfmetrics.registerFont(TTFont(FONT_BOLD, p))
+                bold_registered = True
+                break
+            except Exception:
+                continue
+
+    if not reg_registered or not bold_registered:
+        logging.warning(
+            "Could not register configured TTF fonts (%s / %s). Falling back to built-in fonts which may lack Unicode emoji support.",
+            FONT_PATH_REG,
+            FONT_PATH_BOLD,
+        )
+        # Use PDF base fonts as fallback (limited glyph coverage)
+        FONT_REG = "Helvetica"
+        FONT_BOLD = "Helvetica-Bold"
 
 
-def validate_xml(xml_path: str, xsd_path: str) -> None:
-    """Validate `xml_path` against `xsd_path` using lxml.etree.
+def check_icon_glyphs(font_path: Optional[str] = None) -> None:
+    """Check whether configured icon glyphs are present in the TTF font.
 
-    Raises ValueError with error log if validation fails.
+    Uses fontTools if available. Prints warnings for missing glyphs and
+    suggests installing `fonttools` when not available.
     """
-    try:
-        from lxml import etree
-    except Exception as e:
-        raise RuntimeError(
-            "lxml is required for XML validation (install with 'pip install lxml')"
-        ) from e
+    icons: List[str] = []
+    # collect icon glyphs from known mappings
+    icons.extend(FRONT_DECK_ICONS.values())
+    icons.extend(BACK_DECK_ICONS.values())
+    icons.extend(LOOT_FRONT_DEFAULTS.values())
+    icons.extend(TYPE_ICONS.values())
 
-    xml_doc = etree.parse(xml_path)
-    xsd_doc = etree.parse(xsd_path)
-    schema = etree.XMLSchema(xsd_doc)
-    if not schema.validate(xml_doc):
-        errors = "\n".join(str(e) for e in schema.error_log)
-        raise ValueError(f"XML validation failed:\n{errors}")
+    # normalize and keep unique single characters only
+    chars = set()
+    for ic in icons:
+        if not ic:
+            continue
+        # consider only first codepoint of multi-char strings
+        chars.add(ic[0])
+
+    try:
+        from fontTools.ttLib import TTFont  # type: ignore
+    except Exception:
+        logging.warning("fontTools not installed; cannot check icon glyph coverage. Install with 'pip install fonttools' to enable checks.")
+        return
+
+    if font_path is None:
+        # Ensure fonts are registered and globals updated so we inspect
+        # the same font that will be used for rendering.
+        try:
+            ensure_fonts()
+        except Exception:
+            pass
+        # Prefer to check the icon font if available
+        font_path = ICON_FONT_PATH or FONT_PATH_REG
+
+    try:
+        tt = TTFont(font_path)
+    except Exception as e:
+        logging.warning(f"Unable to load font for glyph check: %s", e)
+        return
+
+    cmap = {}
+    for table in tt['cmap'].tables:
+        cmap.update(table.cmap)
+
+    missing = []
+    for ch in sorted(chars):
+        if ord(ch) not in cmap:
+            missing.append((ch, ord(ch)))
+
+    if missing:
+        logging.warning("The following icon characters are NOT present in font %s:", font_path)
+        for ch, code in missing:
+            logging.warning("  U+%04X  %r", code, ch)
+        logging.warning("These will render as fallback rectangles in the PDF. Consider using a font with broader emoji/glyph coverage or replace icons in config/front_icons.xml.")
+    else:
+        logging.info("All configured icon glyphs are present in %s", font_path)
 
 
 def parse_cards(xml_path: str) -> List[Card]:
@@ -226,6 +323,7 @@ def parse_cards(xml_path: str) -> List[Card]:
         slot = None
         klass = None
         front_icon = None
+        deck = None
 
         # Read nested <loot> block if present (new format)
         loot = node.find("loot")
@@ -244,6 +342,8 @@ def parse_cards(xml_path: str) -> List[Card]:
             # if not explicitly provided, use loot defaults from config/front_icons.xml
             if not front_icon:
                 front_icon = LOOT_FRONT_DEFAULTS.get(ctype)
+            # mark as loot deck
+            deck = "loot"
         else:
             # Backwards compat: read attributes from card element
             ctype = node.attrib.get("type", ctype).strip()
@@ -262,6 +362,7 @@ def parse_cards(xml_path: str) -> List[Card]:
                 for v in ("monster", "biome", "npc", "quest", "curse", "health"):
                     if node.find(v) is not None:
                         front_icon = FRONT_DECK_ICONS.get(v)
+                        deck = v
                         break
 
         count_str = node.attrib.get("count", "1").strip()
@@ -288,6 +389,7 @@ def parse_cards(xml_path: str) -> List[Card]:
                 slot=slot,
                 klass=klass,
                 front_icon=front_icon,
+                deck=deck,
                 count=count,
                 tags=tags,
             ))
@@ -412,10 +514,12 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
                 c.drawImage(icon_img_path, cx - large_size / 2, icon_center_y - large_size / 2,
                             width=large_size, height=large_size, mask='auto')
             else:
-                c.setFont(FONT_REG, int(min(48, large_size / mm * 4)))
+                icon_font_name = ICON_FONT if ICON_FONT_PATH else FONT_REG
+                c.setFont(icon_font_name, int(min(48, large_size / mm * 4)))
                 c.drawCentredString(cx, icon_center_y - (FONT_REG and 0), icon_text)
         except Exception:
-            c.setFont(FONT_REG, 28)
+            icon_font_name = ICON_FONT if ICON_FONT_PATH else FONT_REG
+            c.setFont(icon_font_name, 28)
             c.drawCentredString(cx, icon_center_y + 6, icon_text)
         # draw a small meta/icon in top-left as well
         small_icon_path = os.path.join("icons", f"{card.type}.png")
@@ -423,10 +527,12 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
             try:
                 c.drawImage(small_icon_path, ix, header_y_top - ICON_SIZE, width=ICON_SIZE, height=ICON_SIZE, mask='auto')
             except Exception:
-                c.setFont(FONT_REG, 12)
-                c.drawString(ix, header_y_top - 12, ic)
+                    icon_font_name = ICON_FONT if ICON_FONT_PATH else FONT_REG
+                    c.setFont(icon_font_name, 12)
+                    c.drawString(ix, header_y_top - 12, ic)
         else:
-            c.setFont(FONT_REG, 12)
+            icon_font_name = ICON_FONT if ICON_FONT_PATH else FONT_REG
+            c.setFont(icon_font_name, 12)
             c.drawString(ix, header_y_top - 12, ic)
         # adjust body_top to be below the large icon
         body_top = icon_center_y - (large_size / 2) - 4
@@ -437,10 +543,12 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
             try:
                 c.drawImage(icon_img_path, ix, header_y_top - ICON_SIZE, width=ICON_SIZE, height=ICON_SIZE, mask='auto')
             except Exception:
-                c.setFont(FONT_REG, 12)
+                icon_font_name = ICON_FONT if ICON_FONT_PATH else FONT_REG
+                c.setFont(icon_font_name, 12)
                 c.drawString(ix, header_y_top - 12, ic)
         else:
-            c.setFont(FONT_REG, 12)
+            icon_font_name = ICON_FONT if ICON_FONT_PATH else FONT_REG
+            c.setFont(icon_font_name, 12)
             c.drawString(ix, header_y_top - 12, ic)
 
     # Title
@@ -498,11 +606,15 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
     icon_text = BACK_DECK_ICONS.get("loot", TYPE_ICONS.get("coin", "◈"))
     icon_img_path = None
     if card is not None:
-        # For loot-type cards, always use the deck's loot back icon rather than school/type
-        if card.type in LOOT_FRONT_DEFAULTS:
-            icon_text = BACK_DECK_ICONS.get("loot", icon_text)
+        # Prefer explicit deck back icon when available (e.g. biome -> ⛰)
+        if card.deck and card.deck in BACK_DECK_ICONS:
+            icon_text = BACK_DECK_ICONS.get(card.deck, icon_text)
         else:
-            icon_text = icon_for(card)
+            # For loot-type cards, use the loot deck back icon
+            if card.type in LOOT_FRONT_DEFAULTS:
+                icon_text = BACK_DECK_ICONS.get("loot", icon_text)
+            else:
+                icon_text = icon_for(card)
         potential = os.path.join("icons", f"{card.type}.png")
         if os.path.exists(potential):
             icon_img_path = potential
@@ -514,10 +626,12 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
             img_h = ICON_SIZE
             c.drawImage(icon_img_path, cx - img_w / 2, cy + 10 * mm, width=img_w, height=img_h, mask='auto')
         except Exception:
-            c.setFont(FONT_REG, 28)
+            icon_font_name = ICON_FONT if ICON_FONT_PATH else FONT_REG
+            c.setFont(icon_font_name, 28)
             c.drawCentredString(cx, cy + 10 * mm + 6, icon_text)
     else:
-        c.setFont(FONT_REG, 28)
+        icon_font_name = ICON_FONT if ICON_FONT_PATH else FONT_REG
+        c.setFont(icon_font_name, 28)
         c.drawCentredString(cx, cy + 10 * mm + 6, icon_text)
 
     # Optional colored back background
@@ -635,12 +749,17 @@ def main() -> None:
                         help="Render in color (default: black & white)")
     parser.add_argument("-o", "--outdir", default=os.path.dirname(OUTPUT_PDF) or "out",
                         help="Output directory for generated PDFs")
+    parser.add_argument("--check-icons", dest="check_icons", action="store_true", default=False,
+                        help="Check whether configured icon glyphs are present in the font and print a log")
 
     args = parser.parse_args()
 
     inpath = args.input
     xsd_path = args.xsd or (INPUT_XSD if os.path.exists(INPUT_XSD) else None)
     use_color = args.color
+    if args.check_icons:
+        check_icon_glyphs()
+        return
 
     # Collect xml files
     xml_files: List[str] = []

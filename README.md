@@ -1,4 +1,13 @@
+# Deck PDF Generator
 
+- [Deck PDF Generator](#deck-pdf-generator)
+  - [Python a závislosti](#python-a-závislosti)
+  - [Přidání fontu s emotikony do systému (Linux)](#přidání-fontu-s-emotikony-do-systému-linux)
+  - [Formát karet](#formát-karet)
+  - [TODO](#todo)
+    - [layout.xml](#layoutxml)
+
+## Python a závislosti
 Aktualizace pip:
 ```bash
 pip install --upgrade pip
@@ -24,6 +33,14 @@ Dočasné přidání do path:
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
+## Přidání fontu s emotikony do systému (Linux)
+
+```bash
+sudo apt update
+sudo apt install fonts-symbola fonts-noto-color-emoji fonts-noto-core fonts-noto-extra
+```
+
+## Formát karet
 <!--
     type: item | ability | coin
     class: (optional) mage | warrior | paladin | hunter | thief
@@ -33,6 +50,10 @@ export PATH="$HOME/.local/bin:$PATH"
     value: (optional) same as cost (pro budoucí)
     tags: comma-separated (optional)
 -->
+
+## TODO
+
+### layout.xml
 
 Jak by to vypadalo v XML
 Máš dva soubory:
