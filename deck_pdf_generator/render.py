@@ -10,6 +10,12 @@ from . import fonts
 
 
 def wrap_text(c: canvas.Canvas, text: str, max_width: float, font_name: str, font_size: int) -> List[str]:
+    """Wrap `text` to fit into `max_width` using canvas font metrics.
+
+    Normalizes literal "\\n" sequences into real newlines and preserves
+    paragraph breaks. Returns a list of output lines that will fit within
+    the provided `max_width` when rendered with `font_name`/`font_size`.
+    """
     c.setFont(font_name, font_size)
     lines: List[str] = []
 
@@ -47,6 +53,10 @@ def wrap_text(c: canvas.Canvas, text: str, max_width: float, font_name: str, fon
 
 
 def icon_for(card: Card) -> str:
+    """Return an icon glyph for `card` using configured mappings.
+
+    Checks `card.type`, then `card.school`, and falls back to a bullet.
+    """
     if card.type in config.TYPE_ICONS:
         return config.TYPE_ICONS[card.type]
     if card.school and card.school in config.TYPE_ICONS:
@@ -55,6 +65,10 @@ def icon_for(card: Card) -> str:
 
 
 def draw_cut_marks(c: canvas.Canvas, x: float, y: float, w: float, h: float, size: float = 2.5 * mm) -> None:
+    """Draw crop/cut marks around the rectangle at (x, y, w, h).
+
+    `size` controls the length of the crop marks (default in millimeters).
+    """
     c.line(x - size, y + h, x, y + h)
     c.line(x, y + h, x, y + h + size)
     c.line(x + w, y + h, x + w + size, y + h)
@@ -66,6 +80,15 @@ def draw_cut_marks(c: canvas.Canvas, x: float, y: float, w: float, h: float, siz
 
 
 def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: float, color: bool = False) -> None:
+    """Draw the front side of a single `card` onto the canvas `c`.
+
+    Parameters:
+    - `c`: reportlab canvas to draw onto.
+    - `card`: Card data structure with fields used for rendering.
+    - `x`, `y`: lower-left coordinates of the card box.
+    - `w`, `h`: width and height of the card box.
+    - `color`: when True, use deck color fill for the header.
+    """
     c.setLineWidth(1)
     c.rect(x, y, w, h, stroke=1, fill=0)
 
@@ -192,6 +215,11 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
 
 
 def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: float, h: float, color: bool = False) -> None:
+    """Draw the back side (reverse) of a card or an empty back.
+
+    If `card` is None a generic back is drawn. Parameters mirror
+    `draw_card` (canvas, position/size, color flag).
+    """
     c.setLineWidth(1)
     c.rect(x, y, w, h, stroke=1, fill=0)
 
@@ -252,6 +280,11 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
 
 
 def render_pdf(cards: List[Card], out_path: str, color: bool = False) -> None:
+    """Render `cards` into a multi-page PDF saved to `out_path`.
+
+    Layout is determined by configuration in `config`. When `color` is
+    True, card backs and headers are drawn using deck colors.
+    """
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     c = canvas.Canvas(out_path, pagesize=config.PAGE_SIZE)
     fonts.ensure_fonts()
