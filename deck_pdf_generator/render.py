@@ -10,27 +10,38 @@ from . import fonts
 
 
 def wrap_text(c: canvas.Canvas, text: str, max_width: float, font_name: str, font_size: int) -> List[str]:
-    words = text.replace("\n", " ").split()
-    lines: List[str] = []
-    cur: List[str] = []
-
     c.setFont(font_name, font_size)
+    lines: List[str] = []
 
-    for w in words:
-        trial = (" ".join(cur + [w])).strip()
-        if not trial:
+    # Normalize literal "\\n" sequences into real newlines, then split into paragraphs
+    if text is None:
+        paragraphs = ['']
+    else:
+        normalized = text.replace('\\n', '\n')
+        paragraphs = normalized.split('\n')
+    for p_idx, para in enumerate(paragraphs):
+        if para.strip() == '':
+            # empty paragraph -> produce an empty line
+            lines.append('')
             continue
-        if c.stringWidth(trial, font_name, font_size) <= max_width:
-            cur.append(w)
-        else:
-            if cur:
-                lines.append(" ".join(cur))
-                cur = [w]
-            else:
-                lines.append(w)
 
-    if cur:
-        lines.append(" ".join(cur))
+        words = para.split()
+        cur: List[str] = []
+        for w in words:
+            trial = (" ".join(cur + [w])).strip()
+            if not trial:
+                continue
+            if c.stringWidth(trial, font_name, font_size) <= max_width:
+                cur.append(w)
+            else:
+                if cur:
+                    lines.append(" ".join(cur))
+                    cur = [w]
+                else:
+                    lines.append(w)
+
+        if cur:
+            lines.append(" ".join(cur))
 
     return lines
 
