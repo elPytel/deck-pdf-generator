@@ -124,11 +124,17 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
         meta_parts.append(card.klass)
     meta = " • ".join(meta_parts)
 
-    # draw cost only when non-zero
-    if getattr(card, 'cost', 0):
+    # draw cost (or monster lootBudget) only when non-zero
+    display_cost = None
+    if getattr(card, 'type', None) == 'monster' and getattr(card, 'lootBudget', None) is not None:
+        display_cost = getattr(card, 'lootBudget', 0)
+    else:
+        display_cost = getattr(card, 'cost', 0)
+
+    if display_cost:
         c.setFont(fonts.FONT_BOLD, config.COST_SIZE)
         coin_sym = config.TYPE_ICONS.get("coin", "◈")
-        cost_text = f"{coin_sym} {card.cost}"
+        cost_text = f"{coin_sym} {display_cost}"
         cost_y = header_y_top - (config.COST_SIZE / 2) - 2
         c.drawRightString(x + w - config.PADDING, cost_y, cost_text)
 
@@ -204,6 +210,24 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
     for ln in lines:
         c.drawString(ix, line_y, ln)
         line_y -= (config.BODY_SIZE + 2)
+
+    # Draw monster stats row just above footer area
+    body_bottom = y + config.PADDING + config.FOOTER_H  + (config.STAT_SIZE + 4)
+    stats_y = body_bottom - (config.STAT_SIZE + 2)
+    if getattr(card, 'type', None) == 'monster':
+        stat_parts = []
+        if getattr(card, 'hp', None) is not None:
+            stat_parts.append(f"❤️ {card.hp}")
+        if getattr(card, 'atk', None) is not None:
+            stat_parts.append(f"⚔ {card.atk}")
+        lb = getattr(card, 'lootBudget', None)
+        if lb is not None:
+            coin_sym = config.TYPE_ICONS.get("coin", "◈")
+            stat_parts.append(f"{coin_sym} {lb}")
+        if stat_parts:
+            c.setFont(fonts.FONT_REG, config.STAT_SIZE)
+            stats_text = "   ".join(stat_parts)
+            c.drawString(ix, stats_y, stats_text)
 
     footer_y = y + config.PADDING + 2
     c.setFont(fonts.FONT_REG, config.META_SIZE)

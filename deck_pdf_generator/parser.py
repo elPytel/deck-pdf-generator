@@ -101,6 +101,28 @@ def parse_cards(xml_path: str) -> List[Card]:
         if not cid:
             cid = f"{ctype}_{len(cards)+1}"
 
+        # parse monster-specific stats if present
+        m = node.find('monster')
+        hp = None
+        atk = None
+        lootBudget = None
+        if m is not None:
+            hp_str = m.attrib.get('hp')
+            atk_str = m.attrib.get('atk')
+            lb_str = m.attrib.get('lootBudget') or m.attrib.get('lootbudget')
+            try:
+                hp = int(hp_str) if hp_str is not None else None
+            except Exception:
+                hp = None
+            try:
+                atk = int(atk_str) if atk_str is not None else None
+            except Exception:
+                atk = None
+            try:
+                lootBudget = int(lb_str) if lb_str is not None else None
+            except Exception:
+                lootBudget = None
+
         for _ in range(count):
             cards.append(Card(
                 id=cid,
@@ -109,6 +131,9 @@ def parse_cards(xml_path: str) -> List[Card]:
                 name=name,
                 subtitle=subtitle,
                 effect=effect,
+                hp=hp,
+                atk=atk,
+                lootBudget=lootBudget,
                 school=school,
                 slot=slot,
                 klass=klass,

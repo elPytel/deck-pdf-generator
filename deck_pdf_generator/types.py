@@ -10,6 +10,9 @@ class Card:
     name: str
     subtitle: str
     effect: str
+    hp: int = None
+    atk: int = None
+    lootBudget: int = None
     school: Optional[str] = None
     slot: Optional[str] = None
     klass: Optional[str] = None

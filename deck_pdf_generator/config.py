@@ -30,6 +30,8 @@ SUBTITLE_SIZE = 8
 BODY_SIZE = 9
 COST_SIZE = 18
 META_SIZE = 7
+# Font size used for small stat lines on monster cards
+STAT_SIZE = 15
 
 # Typography defaults (may be overridden by fonts.ensure_fonts)
 FONT_REG = "DejaVuSans"
