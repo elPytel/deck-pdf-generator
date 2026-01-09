@@ -265,16 +265,37 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
     icon_img_path = None
     deck_name = (card.deck if card is not None else None) or "loot"
     if card is not None:
-        if card.deck and card.deck in config.BACK_DECK_ICONS:
-            icon_text = config.BACK_DECK_ICONS.get(card.deck, icon_text)
-        else:
-            if card.type in config.LOOT_FRONT_DEFAULTS:
-                icon_text = config.BACK_DECK_ICONS.get("loot", icon_text)
+        # prefer explicit back_icon on the card (from loot/back_icon attribute)
+        back_icon_attr = getattr(card, 'back_icon', None)
+        back_icon_provided = False
+        if back_icon_attr:
+            back_icon_provided = True
+            icon_text = back_icon_attr
+            # use only the first character/glyph for back rendering
+            if icon_text:
+                icon_text = icon_text[0]
+            back_img = os.path.join("icons", f"{back_icon_attr}.png")
+            if os.path.exists(back_img):
+                icon_img_path = back_img
+
+        # if no explicit back icon image was found, fall back to deck/type defaults
+        if not icon_img_path and not back_icon_provided:
+            if card.deck and card.deck in config.BACK_DECK_ICONS:
+                icon_text = config.BACK_DECK_ICONS.get(card.deck, icon_text)
+                if icon_text:
+                    icon_text = icon_text[0]
             else:
-                icon_text = icon_for(card)
-        potential = os.path.join("icons", f"{card.type}.png")
-        if os.path.exists(potential):
-            icon_img_path = potential
+                if card.type in config.LOOT_FRONT_DEFAULTS:
+                    icon_text = config.BACK_DECK_ICONS.get("loot", icon_text)
+                    if icon_text:
+                        icon_text = icon_text[0]
+                else:
+                    icon_text = icon_for(card)
+                    if icon_text:
+                        icon_text = icon_text[0]
+            potential = os.path.join("icons", f"{card.type}.png")
+            if os.path.exists(potential):
+                icon_img_path = potential
     # color fill should be drawn before the icon so it doesn't cover it
     if color:
         back_color = config.DECK_COLORS.get(deck_name, colors.lightblue)
@@ -294,13 +315,13 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
             # font size in points ~ image height
             font_size = int(img_h)
             c.setFont(icon_font_name, font_size)
-            c.drawCentredString(cx, cy - 15 * mm + int(img_h / 4), icon_text)
+            c.drawCentredString(cx, cy - 15 * mm + int(img_h / 4), (icon_text or '')[:1])
     else:
         icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
         # draw larger emoji when no image is available
         font_size = int(config.ICON_SIZE * 4)
         c.setFont(icon_font_name, font_size)
-        c.drawCentredString(cx, cy - 15 * mm + int((config.ICON_SIZE * 4) / 4), icon_text)
+        c.drawCentredString(cx, cy - 15 * mm + int((config.ICON_SIZE * 4) / 4), (icon_text or '')[:1])
 
     # draw back cost only when card present and cost > 0
     if card is not None and getattr(card, 'cost', 0):
@@ -322,9 +343,10 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
         icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
         back_y = cy - (back_cost_size / 2) - 14 * mm
         if biome_icon:
-            # draw icon slightly left of center
+            # draw icon slightly left of center (use only the first character)
+            biome_glyph = (biome_icon or '')[:1]
             c.setFont(icon_font_name, back_cost_size)
-            c.drawCentredString(cx, back_y, biome_icon)
+            c.drawCentredString(cx, back_y, biome_glyph)
 
     c.setFont(fonts.FONT_BOLD, config.META_SIZE)
     label = "Gnarl"

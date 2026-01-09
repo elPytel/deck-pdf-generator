@@ -51,6 +51,7 @@ def parse_cards(xml_path: str) -> List[Card]:
             slot = loot.attrib.get("slot", None)
             klass = loot.attrib.get("class", None)
             front_icon = loot.attrib.get("front_icon", None)
+            back_icon = loot.attrib.get("back_icon", None)
             if not front_icon:
                 # prefer an icon based on school for abilities, then fallback to loot-type defaults
                 school_icon_map = {
@@ -76,6 +77,7 @@ def parse_cards(xml_path: str) -> List[Card]:
             slot = node.attrib.get("slot", None)
             klass = node.attrib.get("class", None)
             front_icon = node.attrib.get("front_icon", None)
+            back_icon = node.attrib.get("back_icon", None)
             # if card-level front_icon missing, try to read it from the variant child (e.g. <biome front_icon="…"/>)
             if not front_icon:
                 for v in ("monster", "biome", "npc", "quest", "curse", "health"):
@@ -137,6 +139,7 @@ def parse_cards(xml_path: str) -> List[Card]:
                 atk=atk,
                 lootBudget=lootBudget,
                 biome=biome,
+                back_icon=back_icon,
                 school=school,
                 slot=slot,
                 klass=klass,

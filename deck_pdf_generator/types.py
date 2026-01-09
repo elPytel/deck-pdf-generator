@@ -14,6 +14,7 @@ class Card:
     atk: int = None
     lootBudget: int = None
     biome: Optional[str] = None
+    back_icon: Optional[str] = None
     school: Optional[str] = None
     slot: Optional[str] = None
     klass: Optional[str] = None
