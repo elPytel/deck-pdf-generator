@@ -12,6 +12,8 @@ import glob
 import argparse
 import logging
 from typing import List, Optional
+from collections import Counter
+from prettytable import PrettyTable
 
 from deck_pdf_generator import config, fonts, parser, render
 
@@ -73,20 +75,34 @@ def main() -> None:
 
     os.makedirs(args.outdir, exist_ok=True)
 
+    overall_counts: Counter = Counter()
     for xml_path in xml_files:
         if xsd_path and os.path.exists(xsd_path):
             validate_xml(xml_path, xsd_path)
-            print(f"XML {xml_path} validated against {xsd_path}")
+            logging.info(f"XML {xml_path} validated against {xsd_path}")
 
         cards = parser.parse_cards(xml_path)
         if not cards:
-            print(f"No cards found in {xml_path}, skipping")
+            logging.info(f"No cards found in {xml_path}, skipping")
             continue
+
+        # accumulate counts per deck for global statistics
+        deck_names = [(getattr(c, 'deck', None) or 'loot') for c in cards]
+        counts = Counter(deck_names)
+        overall_counts.update(counts)
 
         base = os.path.splitext(os.path.basename(xml_path))[0]
         out_pdf = os.path.join(args.outdir, f"{base}_gnarl_cards.pdf")
         render.render_pdf(cards, out_pdf, color=use_color)
-        print(f"OK: rendered {len(cards)} cards -> {out_pdf}")
+        logging.info(f"OK: Rendered {len(cards)} cards to {out_pdf}")
+
+    # After processing all files, print aggregated statistics
+    pt = PrettyTable(["Balíček", "Počet"])
+    for name, cnt in sorted(overall_counts.items()):
+        pt.add_row([name, cnt])
+    print("\nSouhrnná statistika karet:")
+    print(pt)
+    print(f"Celkem: {sum(overall_counts.values())}")
 
 
 if __name__ == "__main__":
