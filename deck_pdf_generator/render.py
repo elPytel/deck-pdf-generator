@@ -131,14 +131,22 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
     else:
         display_cost = getattr(card, 'cost', 0)
 
+    coin_sym = config.TYPE_ICONS.get("coin", "◈")
     if display_cost:
         c.setFont(fonts.FONT_BOLD, config.COST_SIZE)
-        coin_sym = config.TYPE_ICONS.get("coin", "◈")
         cost_text = f"{coin_sym} {display_cost}"
         cost_y = header_y_top - (config.COST_SIZE / 2) - 2
         c.drawRightString(x + w - config.PADDING, cost_y, cost_text)
 
     cx = x + w / 2
+
+    # determine left/top icon text: for monsters prefer biome-specific icon
+    left_icon_text = None
+    if getattr(card, 'type', None) == 'monster' and getattr(card, 'biome', None):
+        left_icon_text = config.FRONT_BIOME_ICONS.get(card.biome)
+    if not left_icon_text:
+        left_icon_text = config.TYPE_ICONS.get(card.type) or ic
+
     if card.front_icon:
         icon_img_path = os.path.join("icons", f"{card.front_icon}.png")
         icon_text = config.TYPE_ICONS.get(card.front_icon) or card.front_icon or ic
@@ -153,12 +161,13 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
             else:
                 icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
                 c.setFont(icon_font_name, int(min(48, large_size / mm * 4)))
-                c.drawCentredString(cx, icon_center_y - (fonts.FONT_REG and 0), icon_text)
+                c.drawCentredString(cx, icon_center_y, icon_text)
         except Exception:
             icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
             c.setFont(icon_font_name, 28)
             c.drawCentredString(cx, icon_center_y + 6, icon_text)
 
+        # small header icon (biome/type)
         small_icon_path = os.path.join("icons", f"{card.type}.png")
         if os.path.exists(small_icon_path):
             try:
@@ -166,47 +175,49 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
             except Exception:
                 icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
                 c.setFont(icon_font_name, 12)
-                c.drawString(ix, header_y_top - 12, ic)
+                c.drawString(ix, header_y_top - 12, left_icon_text)
         else:
             icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
             c.setFont(icon_font_name, 12)
-            c.drawString(ix, header_y_top - 12, ic)
+            c.drawString(ix, header_y_top - 12, left_icon_text)
 
         body_top = icon_center_y - (large_size / 2) - 4
     else:
-        icon_img_path = os.path.join("icons", f"{card.type}.png")
-        if os.path.exists(icon_img_path):
+        # no large front icon: draw small top-left icon and set body area under header
+        small_icon_path = os.path.join("icons", f"{card.type}.png")
+        if os.path.exists(small_icon_path):
             try:
-                c.drawImage(icon_img_path, ix, header_y_top - config.ICON_SIZE, width=config.ICON_SIZE, height=config.ICON_SIZE, mask='auto')
+                c.drawImage(small_icon_path, ix, header_y_top - config.ICON_SIZE, width=config.ICON_SIZE, height=config.ICON_SIZE, mask='auto')
             except Exception:
                 icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
                 c.setFont(icon_font_name, 12)
-                c.drawString(ix, header_y_top - 12, ic)
+                c.drawString(ix, header_y_top - 12, left_icon_text)
         else:
             icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
             c.setFont(icon_font_name, 12)
-            c.drawString(ix, header_y_top - 12, ic)
+            c.drawString(ix, header_y_top - 12, left_icon_text)
 
+        body_top = header_y_bottom - 4
+
+    # Title and subtitle next to the small icon
+    title_x = ix + config.ICON_SIZE / 2 + 1
     c.setFont(fonts.FONT_BOLD, config.TITLE_SIZE)
-    title_x = ix + 14
     title_y = header_y_top - 12
-    c.drawString(title_x, title_y, card.name[:40])
+    c.drawString(title_x, title_y, (card.name or '')[:40])
 
     c.setFont(fonts.FONT_REG, config.SUBTITLE_SIZE)
-    c.drawString(title_x, title_y - 10, card.subtitle[:55])
+    c.drawString(title_x, title_y - 10, (card.subtitle or '')[:55])
 
     c.setFont(fonts.FONT_REG, config.META_SIZE)
     c.drawString(ix, header_y_bottom + 2, meta[:80])
 
-    if not card.front_icon:
-        body_top = header_y_bottom - 4
     body_bottom = y + config.PADDING + config.FOOTER_H
     body_h = body_top - body_bottom
-    max_lines = max(1, int(body_h / (config.BODY_SIZE + 2)))
+    max_lines = int(body_h / (config.BODY_SIZE + 2)) if body_h > 0 else 1
+    line_y = body_top - config.BODY_SIZE
 
     c.setFont(fonts.FONT_REG, config.BODY_SIZE)
     lines = wrap_text(c, card.effect, iw, fonts.FONT_REG, config.BODY_SIZE)[:max_lines]
-    line_y = body_top - (config.BODY_SIZE + 2)
     for ln in lines:
         c.drawString(ix, line_y, ln)
         line_y -= (config.BODY_SIZE + 2)
@@ -297,6 +308,23 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
         c.setFont(fonts.FONT_BOLD, back_cost_size)
         cost_str = str(card.cost)
         c.drawCentredString(cx, cy - (back_cost_size / 2) - 14 * mm, cost_str)
+    
+    # pokud je karta monster.
+    if card is not None and getattr(card, 'type', None) == 'monster':
+        # If this is a monster with a biome-specific icon, draw the biome icon
+        # in the middle of the back card under the big icon
+        back_cost_size = int(config.COST_SIZE * 1.8)
+        c.setFont(fonts.FONT_BOLD, back_cost_size)
+        biome_icon = None
+        if getattr(card, 'biome', None):
+            biome_icon = config.FRONT_BIOME_ICONS.get(card.biome)
+
+        icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
+        back_y = cy - (back_cost_size / 2) - 14 * mm
+        if biome_icon:
+            # draw icon slightly left of center
+            c.setFont(icon_font_name, back_cost_size)
+            c.drawCentredString(cx, back_y, biome_icon)
 
     c.setFont(fonts.FONT_BOLD, config.META_SIZE)
     label = "Gnarl"

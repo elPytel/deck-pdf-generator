@@ -56,11 +56,12 @@ def load_type_icons(path: str = os.path.join("config", "types.xml")) -> Dict[str
     return icons
 
 
-def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, object]]:
+def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, object], Dict[str, str]]:
     deck_front_map = {}
     deck_back_map = {}
     loot_map = {}
     deck_colors: Dict[str, object] = {}
+    biome_map: Dict[str, str] = {}
     try:
         tree = ET.parse(path)
         root = tree.getroot()
@@ -86,10 +87,17 @@ def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> T
                 front = lt.attrib.get("front")
                 if name and front:
                     loot_map[name] = front
+        bd = root.find("biomeSpecific")
+        if bd is not None:
+            for b in bd.findall("biome"):
+                name = b.attrib.get("name")
+                ico = b.attrib.get("icone") or b.attrib.get("icone")
+                if name and ico:
+                    biome_map[name] = ico
     except Exception:
         pass
-    return deck_front_map, deck_back_map, loot_map, deck_colors
+    return deck_front_map, deck_back_map, loot_map, deck_colors, biome_map
 
 # Load globals
 TYPE_ICONS = load_type_icons()
-FRONT_DECK_ICONS, BACK_DECK_ICONS, LOOT_FRONT_DEFAULTS, DECK_COLORS = load_front_icons()
+FRONT_DECK_ICONS, BACK_DECK_ICONS, LOOT_FRONT_DEFAULTS, DECK_COLORS, FRONT_BIOME_ICONS = load_front_icons()

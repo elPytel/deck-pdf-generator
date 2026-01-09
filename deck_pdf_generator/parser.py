@@ -106,10 +106,12 @@ def parse_cards(xml_path: str) -> List[Card]:
         hp = None
         atk = None
         lootBudget = None
+        biome = None
         if m is not None:
             hp_str = m.attrib.get('hp')
             atk_str = m.attrib.get('atk')
             lb_str = m.attrib.get('lootBudget') or m.attrib.get('lootbudget')
+            biome = m.attrib.get('biome') or m.attrib.get('biome')
             try:
                 hp = int(hp_str) if hp_str is not None else None
             except Exception:
@@ -134,6 +136,7 @@ def parse_cards(xml_path: str) -> List[Card]:
                 hp=hp,
                 atk=atk,
                 lootBudget=lootBudget,
+                biome=biome,
                 school=school,
                 slot=slot,
                 klass=klass,
