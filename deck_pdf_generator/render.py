@@ -309,7 +309,9 @@ def render_pdf(cards: List[Card], out_path: str, color: bool = False) -> None:
             card_idx = start_idx + pos
             col = pos % config.GRID_COLS
             r = pos // config.GRID_COLS
-            x = start_x + col * (config.CARD_W + config.GAP_X)
+            # Mirror columns left<->right so backs align right-to-left for duplex printing
+            mirror_col = (config.GRID_COLS - 1 - col)
+            x = start_x + mirror_col * (config.CARD_W + config.GAP_X)
             y = start_y + (config.GRID_ROWS - 1 - r) * (config.CARD_H + config.GAP_Y)
             if card_idx < len(cards):
                 draw_back(c, cards[card_idx], x, y, config.CARD_W, config.CARD_H, color=use_color)
