@@ -349,11 +349,13 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
             c.drawCentredString(cx, back_y, biome_glyph)
 
     c.setFont(fonts.FONT_BOLD, config.META_SIZE)
-    label = "Gnarl"
+    # include deck type next to the "Gnarl" label on the back
+    deck_label = (card.deck if card is not None else None) or "loot"
+    label = f"Gnarl — {deck_label}"
     c.drawCentredString(cx, y + config.PADDING + 2, label)
 
 
-def render_pdf(cards: List[Card], out_path: str, color: bool = False) -> None:
+def render_pdf(cards: List[Card], out_path: str, color: bool = False, zero_gaps: bool = False) -> None:
     """Render `cards` into a multi-page PDF saved to `out_path`.
 
     Layout is determined by configuration in `config`. When `color` is
@@ -366,8 +368,11 @@ def render_pdf(cards: List[Card], out_path: str, color: bool = False) -> None:
     page_w, page_h = config.PAGE_SIZE
     use_color = bool(color)
 
-    grid_w = config.GRID_COLS * config.CARD_W + (config.GRID_COLS - 1) * config.GAP_X
-    grid_h = config.GRID_ROWS * config.CARD_H + (config.GRID_ROWS - 1) * config.GAP_Y
+    gap_x = 0 if zero_gaps else config.GAP_X
+    gap_y = 0 if zero_gaps else config.GAP_Y
+
+    grid_w = config.GRID_COLS * config.CARD_W + (config.GRID_COLS - 1) * gap_x
+    grid_h = config.GRID_ROWS * config.CARD_H + (config.GRID_ROWS - 1) * gap_y
 
     start_x = (page_w - grid_w) / 2
     actual_left = start_x
@@ -401,8 +406,8 @@ def render_pdf(cards: List[Card], out_path: str, color: bool = False) -> None:
             card_idx = start_idx + pos
             col = pos % config.GRID_COLS
             r = pos // config.GRID_COLS
-            x = start_x + col * (config.CARD_W + config.GAP_X)
-            y = start_y + (config.GRID_ROWS - 1 - r) * (config.CARD_H + config.GAP_Y)
+            x = start_x + col * (config.CARD_W + gap_x)
+            y = start_y + (config.GRID_ROWS - 1 - r) * (config.CARD_H + gap_y)
             if card_idx < end_idx:
                 draw_card(c, cards[card_idx], x, y, config.CARD_W, config.CARD_H, color=use_color)
 
@@ -418,8 +423,8 @@ def render_pdf(cards: List[Card], out_path: str, color: bool = False) -> None:
             r = pos // config.GRID_COLS
             # Mirror columns left<->right so backs align right-to-left for duplex printing
             mirror_col = (config.GRID_COLS - 1 - col)
-            x = start_x + mirror_col * (config.CARD_W + config.GAP_X)
-            y = start_y + (config.GRID_ROWS - 1 - r) * (config.CARD_H + config.GAP_Y)
+            x = start_x + mirror_col * (config.CARD_W + gap_x)
+            y = start_y + (config.GRID_ROWS - 1 - r) * (config.CARD_H + gap_y)
             if card_idx < len(cards):
                 draw_back(c, cards[card_idx], x, y, config.CARD_W, config.CARD_H, color=use_color)
             else:

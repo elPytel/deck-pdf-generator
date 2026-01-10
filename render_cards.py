@@ -47,6 +47,8 @@ def main() -> None:
                             help="Optional XSD file to validate XML against (if omitted, looks for cards.xsd)")
     parser_arg.add_argument("--color", dest="color", action="store_true", default=False,
                             help="Render in color (default: black & white)")
+    parser_arg.add_argument("--zero-gaps", dest="zero_gaps", action="store_true", default=False,
+                            help="Render with zero spacing between cards for easier cutting")
     parser_arg.add_argument("-o", "--outdir", default=os.path.join("out"),
                             help="Output directory for generated PDFs")
     parser_arg.add_argument("--check-icons", dest="check_icons", action="store_true", default=False,
@@ -93,7 +95,7 @@ def main() -> None:
 
         base = os.path.splitext(os.path.basename(xml_path))[0]
         out_pdf = os.path.join(args.outdir, f"{base}_gnarl_cards.pdf")
-        render.render_pdf(cards, out_pdf, color=use_color)
+        render.render_pdf(cards, out_pdf, color=use_color, zero_gaps=args.zero_gaps)
         logging.info(f"OK: Rendered {len(cards)} cards to {out_pdf}")
 
     # After processing all files, print aggregated statistics
