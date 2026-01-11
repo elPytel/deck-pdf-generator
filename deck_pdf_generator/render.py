@@ -1,5 +1,6 @@
 import os
 import math
+import logging
 from typing import List, Optional
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
@@ -159,13 +160,18 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
                 c.drawImage(icon_img_path, cx - large_size / 2, icon_center_y - large_size / 2,
                             width=large_size, height=large_size, mask='auto')
             else:
+                logging.info("Icon image not found for front icon '%s' (expected %s); falling back to glyph", icon_text, icon_img_path)
                 icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
                 c.setFont(icon_font_name, int(min(48, large_size / mm * 4)))
                 c.drawCentredString(cx, icon_center_y, icon_text)
         except Exception:
+            logging.warning("Failed to draw front icon image '%s' or glyph '%s' for card %s", icon_img_path, icon_text, getattr(card, 'id', '<unknown>'))
             icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
             c.setFont(icon_font_name, 28)
-            c.drawCentredString(cx, icon_center_y + 6, icon_text)
+            try:
+                c.drawCentredString(cx, icon_center_y + 6, icon_text)
+            except Exception:
+                logging.error("Failed to fallback-draw front glyph '%s' for card %s", icon_text, getattr(card, 'id', '<unknown>'))
 
         # small header icon (biome/type)
         small_icon_path = os.path.join("icons", f"{card.type}.png")
@@ -173,10 +179,12 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
             try:
                 c.drawImage(small_icon_path, ix, header_y_top - config.ICON_SIZE, width=config.ICON_SIZE, height=config.ICON_SIZE, mask='auto')
             except Exception:
+                logging.warning("Failed to draw small icon image %s for card %s; using glyph '%s'", small_icon_path, getattr(card, 'id', '<unknown>'), left_icon_text)
                 icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
                 c.setFont(icon_font_name, 12)
                 c.drawString(ix, header_y_top - 12, left_icon_text)
         else:
+            logging.debug("Small icon image not found: %s; using glyph '%s'", small_icon_path, left_icon_text)
             icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
             c.setFont(icon_font_name, 12)
             c.drawString(ix, header_y_top - 12, left_icon_text)
@@ -189,10 +197,12 @@ def draw_card(c: canvas.Canvas, card: Card, x: float, y: float, w: float, h: flo
             try:
                 c.drawImage(small_icon_path, ix, header_y_top - config.ICON_SIZE, width=config.ICON_SIZE, height=config.ICON_SIZE, mask='auto')
             except Exception:
+                logging.warning("Failed to draw small icon image %s for card %s; using glyph '%s'", small_icon_path, getattr(card, 'id', '<unknown>'), left_icon_text)
                 icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
                 c.setFont(icon_font_name, 12)
                 c.drawString(ix, header_y_top - 12, left_icon_text)
         else:
+            logging.debug("Small icon image not found: %s; using glyph '%s'", small_icon_path, left_icon_text)
             icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
             c.setFont(icon_font_name, 12)
             c.drawString(ix, header_y_top - 12, left_icon_text)
@@ -296,6 +306,8 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
             potential = os.path.join("icons", f"{card.type}.png")
             if os.path.exists(potential):
                 icon_img_path = potential
+            else:
+                logging.debug("No specific back image found for card type '%s' at %s", card.type, potential)
     # color fill should be drawn before the icon so it doesn't cover it
     if color:
         back_color = config.DECK_COLORS.get(deck_name, colors.lightblue)
@@ -311,12 +323,17 @@ def draw_back(c: canvas.Canvas, card: Optional[Card], x: float, y: float, w: flo
             img_h = config.ICON_SIZE * 4
             c.drawImage(icon_img_path, cx - img_w / 2, cy - 15 * mm, width=img_w, height=img_h, mask='auto')
         except Exception:
+            logging.warning("Failed to draw back image %s for card %s; falling back to glyph '%s'", icon_img_path, getattr(card, 'id', '<unknown>'), icon_text)
             icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
             # font size in points ~ image height
             font_size = int(img_h)
             c.setFont(icon_font_name, font_size)
-            c.drawCentredString(cx, cy - 15 * mm + int(img_h / 4), (icon_text or '')[:1])
+            try:
+                c.drawCentredString(cx, cy - 15 * mm + int(img_h / 4), (icon_text or '')[:1])
+            except Exception:
+                logging.error("Failed to draw back glyph '%s' for card %s", icon_text, getattr(card, 'id', '<unknown>'))
     else:
+        logging.debug("No back image available; using glyph '%s' for card %s", icon_text, getattr(card, 'id', '<unknown>'))
         icon_font_name = fonts.ICON_FONT if fonts.ICON_FONT_PATH else fonts.FONT_REG
         # draw larger emoji when no image is available
         font_size = int(config.ICON_SIZE * 4)
