@@ -1,2 +1,3 @@
 reportlab
-etree
+prettytable
+lxml
