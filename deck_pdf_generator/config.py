@@ -56,7 +56,7 @@ def load_type_icons(path: str = os.path.join("config", "types.xml")) -> Dict[str
     return icons
 
 
-def load_front_icons(path: str = os.path.join("config", "front_icons.xml")) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, object], Dict[str, str]]:
+def load_front_icons(path: str = os.path.join("config", "icons.xml")) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, object], Dict[str, str]]:
     deck_front_map = {}
     deck_back_map = {}
     loot_map = {}
