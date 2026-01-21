@@ -41,7 +41,7 @@ FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 # Icon / type mappings loaded from config files
 
-def load_type_icons(path: str = os.path.join("config", "types.xml")) -> Dict[str, str]:
+def load_type_icons(path: str = os.path.join("cards", "config", "icons.xml")) -> Dict[str, str]:
     icons: Dict[str, str] = {}
     try:
         tree = ET.parse(path)
@@ -56,7 +56,7 @@ def load_type_icons(path: str = os.path.join("config", "types.xml")) -> Dict[str
     return icons
 
 
-def load_front_icons(path: str = os.path.join("config", "icons.xml")) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, object], Dict[str, str]]:
+def load_front_icons(path: str = os.path.join("cards", "config", "icons.xml")) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, object], Dict[str, str]]:
     deck_front_map = {}
     deck_back_map = {}
     loot_map = {}
